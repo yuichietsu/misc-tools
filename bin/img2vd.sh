@@ -120,13 +120,25 @@ if [ -n "$SIZE" ]; then
 
   echo "Annotating Vector Drawable (size ${WIDTH}x${HEIGHT})..."
 
-  perl -0777 -i -pe "my \\$w = '${WIDTH}'; my \\$h = '${HEIGHT}'; my \\$usage = '${USAGE}'; "\
-    -e 's/(<\?xml[^>]*\?>\s*)/\$1."<!-- intended-usage: ".\$usage." -->\n"/e if \\$usage ne "";' \
-    -e 'if (s/(<vector\b[^>]*?)android:width="[^"]*"/ $1 . "android:width=\"".\$w."px\"" /e) { } else { s/(<vector\b)/$1 . " android:width=\"".\$w."px\""/e }' \
-    -e 'if (s/(<vector\b[^>]*?)android:height="[^"]*"/ $1 . "android:height=\"".\$h."px\"" /e) { } else { s/(<vector\b)/$1 . " android:height=\"".\$h."px\""/e }' \
-    -e 'if (s/(<vector\b[^>]*?)android:viewportWidth="[^"]*"/ $1 . "android:viewportWidth=\"".\$w."\"" /e) { } else { s/(<vector\b)/$1 . " android:viewportWidth=\"".\$w."\""/e }' \
-    -e 'if (s/(<vector\b[^>]*?)android:viewportHeight="[^"]*"/ $1 . "android:viewportHeight=\"".\$h."\"" /e) { } else { s/(<vector\b)/$1 . " android:viewportHeight=\"".\$h."\""/e }' \
-    "$OUTPUT"
+  # Use environment variables to pass size values into perl to avoid shell
+  # quoting/expansion issues.
+  PERL_W="$WIDTH" PERL_H="$HEIGHT" PERL_USAGE="$USAGE" \
+    perl -0777 -i -pe '
+      my $w = $ENV{"PERL_W"};
+      my $h = $ENV{"PERL_H"};
+      my $usage = $ENV{"PERL_USAGE"} // "";
+      if ($usage ne "") {
+        s/(<\?xml[^>]*\?>\s*)/$1."<!-- intended-usage: ".$usage." -->\n"/e;
+      }
+      if (s/(<vector\b[^>]*?)android:width="[^"]*"/ $1 . "android:width=\"".$w."px\"" /e) { }
+      else { s/(<vector\b)/$1 . " android:width=\"".$w."px\""/e }
+      if (s/(<vector\b[^>]*?)android:height="[^"]*"/ $1 . "android:height=\"".$h."px\"" /e) { }
+      else { s/(<vector\b)/$1 . " android:height=\"".$h."px\""/e }
+      if (s/(<vector\b[^>]*?)android:viewportWidth="[^"]*"/ $1 . "android:viewportWidth=\"".$w."\"" /e) { }
+      else { s/(<vector\b)/$1 . " android:viewportWidth=\"".$w."\""/e }
+      if (s/(<vector\b[^>]*?)android:viewportHeight="[^"]*"/ $1 . "android:viewportHeight=\"".$h."\"" /e) { }
+      else { s/(<vector\b)/$1 . " android:viewportHeight=\"".$h."\""/e }
+    ' "$OUTPUT"
 
   echo "Annotated: $OUTPUT"
 fi
