@@ -5,12 +5,15 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") INPUT_IMAGE OUTPUT_PATH [--type TYPE] [--size WIDTHxHEIGHT] [--background COLOR]
 
-Produces output tailored for different Android usage types (the file format depends on the type):
-  - vector:  Produces an Android Vector Drawable XML (file format = Android Vector Drawable). This is the default.
-  - banner:  Produces a PNG intended to be used as `android:banner` in an Android app (raster PNG).
-  - icon:    Produces a PNG intended to be used as `android:icon` in an Android app (raster PNG).
+Produces output tailored for different Android usage types (the file format is Android Vector Drawable;
+`--type` controls intended usage metadata). Supported types:
+  - vector: Produces an Android Vector Drawable XML (default).
+  - banner: Intended usage `android:banner` (metadata adjusted for banner usage).
+  - icon:   Intended usage `android:icon` (metadata adjusted for icon usage).
 
-Note: the `--type` selects the intended usage within an Android app (banner/icon/etc.), not the general image file format.
+Note: `--size` accepts either WIDTHxHEIGHT (e.g. 512x512) or the aliases `banner` and `icon`.
+  - `--size banner` → 320x180
+  - `--size icon`   → 108x108
 
 Requires ImageMagick (`magick` or `convert`) and `svg2vectordrawable` (or `npx`) for `vector` mode.
 
@@ -110,6 +113,13 @@ case "$TYPE" in
         else
           SIZE="512x512"
         fi
+      fi
+
+      # Allow size aliases: 'banner' and 'icon'
+      if [ "$SIZE" = "banner" ]; then
+        SIZE="320x180"
+      elif [ "$SIZE" = "icon" ]; then
+        SIZE="108x108"
       fi
 
       WIDTH="${SIZE%x*}"
