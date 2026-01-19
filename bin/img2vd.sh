@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") INPUT_IMAGE OUTPUT_PATH [--size WIDTHxHEIGHT|banner|icon] [--background COLOR]
+Usage: $(basename "$0") INPUT_IMAGE OUTPUT_PATH [--size WIDTHxHEIGHT|banner|icon] [--svg] [--background COLOR]
 
 Produces an Android Vector Drawable XML. The `--size` flag controls whether the
 tool will annotate the produced AVD with intended-usage metadata and set
@@ -34,6 +34,7 @@ OUTPUT="$2"
 # Defaults
 SIZE=""
 BG=""
+SAVE_SVG=0
 
 # Consume the first two positional args and parse remaining flags
 shift 2
@@ -46,6 +47,10 @@ while [ "$#" -gt 0 ]; do
     --size)
       SIZE="${2:-}"
       shift 2
+      ;;
+    --svg)
+      SAVE_SVG=1
+      shift 1
       ;;
     *)
       echo "Unknown option: $1" >&2
@@ -92,6 +97,13 @@ fi
 
 echo "Running svg2vectordrawable to produce Android Vector Drawable -> '$OUTPUT'..."
 eval "$SVG2VD_CMD -i \"$SVG\" -o \"$OUTPUT\""
+
+# If requested, save the intermediate SVG to a file derived from the OUTPUT path
+if [ "$SAVE_SVG" -eq 1 ]; then
+  SVG_OUTPUT="${OUTPUT%.*}.svg"
+  echo "Saving intermediate SVG -> '$SVG_OUTPUT'..."
+  cp "$SVG" "$SVG_OUTPUT"
+fi
 
 # If user provided --size (either WIDTHxHEIGHT or alias), adjust attributes and
 # optionally add an intended-usage comment for alias values (banner/icon).
