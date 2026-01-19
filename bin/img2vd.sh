@@ -3,15 +3,13 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") INPUT_IMAGE OUTPUT_PATH [--type TYPE] [--size WIDTHxHEIGHT] [--background COLOR]
+Usage: $(basename "$0") INPUT_IMAGE OUTPUT_PATH [--size WIDTHxHEIGHT|banner|icon] [--background COLOR]
 
-Produces output tailored for different Android usage types (the file format is Android Vector Drawable;
-`--type` controls intended usage metadata). Supported types:
-  - vector: Produces an Android Vector Drawable XML (default).
-  - banner: Intended usage `android:banner` (metadata adjusted for banner usage).
-  - icon:   Intended usage `android:icon` (metadata adjusted for icon usage).
+Produces an Android Vector Drawable XML. The `--size` flag controls whether the
+tool will annotate the produced AVD with intended-usage metadata and set
+`android:width`/`android:height` and `android:viewportWidth`/`android:viewportHeight`.
 
-Note: `--size` accepts either WIDTHxHEIGHT (e.g. 512x512) or the aliases `banner` and `icon`.
+`--size` accepts either WIDTHxHEIGHT (e.g. 512x512) or the aliases `banner` and `icon`.
   - `--size banner` → 320x180
   - `--size icon`   → 108x108
 
@@ -34,7 +32,6 @@ INPUT="$1"
 OUTPUT="$2"
 
 # Defaults
-TYPE="vector"
 SIZE=""
 BG=""
 
@@ -44,10 +41,6 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --background)
       BG="${2:-}"
-      shift 2
-      ;;
-    --type)
-      TYPE="${2:-}"
       shift 2
       ;;
     --size)
@@ -86,78 +79,56 @@ if [ ! -f "$INPUT" ]; then
   exit 1
 fi
 
-case "$TYPE" in
-  vector|banner|icon)
-    TMPDIR=$(mktemp -d)
-    trap 'rm -rf "$TMPDIR"' EXIT
-    SVG="$TMPDIR/converted.svg"
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+SVG="$TMPDIR/converted.svg"
 
-    echo "Converting '$INPUT' -> temporary SVG..."
-    if [ -n "$BG" ]; then
-      "$IM_CMD" "$INPUT" -background "$BG" -flatten "$SVG"
-    else
-      "$IM_CMD" "$INPUT" "$SVG"
-    fi
+echo "Converting '$INPUT' -> temporary SVG..."
+if [ -n "$BG" ]; then
+  "$IM_CMD" "$INPUT" -background "$BG" -flatten "$SVG"
+else
+  "$IM_CMD" "$INPUT" "$SVG"
+fi
 
-    echo "Running svg2vectordrawable to produce Android Vector Drawable -> '$OUTPUT'..."
-    eval "$SVG2VD_CMD -i \"$SVG\" -o \"$OUTPUT\""
+echo "Running svg2vectordrawable to produce Android Vector Drawable -> '$OUTPUT'..."
+eval "$SVG2VD_CMD -i \"$SVG\" -o \"$OUTPUT\""
 
-    # If user requested a specific usage type (banner/icon) or provided --size,
-    # adjust the produced Vector Drawable's root attributes (width/height/viewport)
-    # so the AVD carries metadata appropriate for that usage.
-    if [ "$TYPE" != "vector" ] || [ -n "$SIZE" ]; then
-      # Default sizes when not explicitly provided
-      if [ -z "$SIZE" ]; then
-        if [ "$TYPE" = "banner" ]; then
-          SIZE="1920x720"
-        else
-          SIZE="512x512"
-        fi
-      fi
+# If user provided --size (either WIDTHxHEIGHT or alias), adjust attributes and
+# optionally add an intended-usage comment for alias values (banner/icon).
+if [ -n "$SIZE" ]; then
+  ORIG_SIZE="$SIZE"
 
-      # Allow size aliases: 'banner' and 'icon'
-      if [ "$SIZE" = "banner" ]; then
-        SIZE="320x180"
-      elif [ "$SIZE" = "icon" ]; then
-        SIZE="108x108"
-      fi
+  # Default sizes when alias used; numeric sizes pass through
+  if [ "$SIZE" = "banner" ]; then
+    SIZE="320x180"
+  elif [ "$SIZE" = "icon" ]; then
+    SIZE="108x108"
+  fi
 
-      WIDTH="${SIZE%x*}"
-      HEIGHT="${SIZE#*x}"
-      if ! [[ "$WIDTH" =~ ^[0-9]+$ ]] || ! [[ "$HEIGHT" =~ ^[0-9]+$ ]]; then
-        echo "Error: invalid --size format. Use WIDTHxHEIGHT, e.g. 512x512" >&2
-        exit 1
-      fi
+  WIDTH="${SIZE%x*}"
+  HEIGHT="${SIZE#*x}"
+  if ! [[ "$WIDTH" =~ ^[0-9]+$ ]] || ! [[ "$HEIGHT" =~ ^[0-9]+$ ]]; then
+    echo "Error: invalid --size format. Use WIDTHxHEIGHT or 'banner'/'icon' aliases" >&2
+    exit 1
+  fi
 
-      # Update vector drawable attributes: android:width/android:height (px)
-      # and android:viewportWidth/android:viewportHeight
-      # Insert an intended-usage XML comment and adjust attributes robustly using perl
-      echo "Annotating Vector Drawable for usage '$TYPE' (size ${WIDTH}x${HEIGHT})..."
+  # Determine usage label only for aliases
+  USAGE=""
+  if [ "$ORIG_SIZE" = "banner" ] || [ "$ORIG_SIZE" = "icon" ]; then
+    USAGE="$ORIG_SIZE"
+  fi
 
-      perl -0777 -i -pe '
-        my $w = "$WIDTH"; my $h = "$HEIGHT"; my $usage = "$TYPE";
-        # add intended-usage comment after XML declaration
-        s/(<\?xml[^>]*\?>\s*)/$1."<!-- intended-usage: ".$usage." -->\n"/e;
-        # replace or add android:width/android:height attributes (use px)
-        if (s/(<vector\b[^>]*?)android:width="[^"]*"/ $1 . "android:width=\"".$w."px\"" /e) { }
-        else { s/(<vector\b)/$1 . " android:width=\"".$w."px\""/e }
-        if (s/(<vector\b[^>]*?)android:height="[^"]*"/ $1 . "android:height=\"".$h."px\"" /e) { }
-        else { s/(<vector\b)/$1 . " android:height=\"".$h."px\""/e }
-        # replace or add viewport attributes (numeric)
-        if (s/(<vector\b[^>]*?)android:viewportWidth="[^"]*"/ $1 . "android:viewportWidth=\"".$w."\"" /e) { }
-        else { s/(<vector\b)/$1 . " android:viewportWidth=\"".$w."\""/e }
-        if (s/(<vector\b[^>]*?)android:viewportHeight="[^"]*"/ $1 . "android:viewportHeight=\"".$h."\"" /e) { }
-        else { s/(<vector\b)/$1 . " android:viewportHeight=\"".$h."\""/e }
-      ' "$OUTPUT"
+  echo "Annotating Vector Drawable (size ${WIDTH}x${HEIGHT})..."
 
-      echo "Annotated: $OUTPUT"
-    fi
+  perl -0777 -i -pe "my \\$w = '${WIDTH}'; my \\$h = '${HEIGHT}'; my \\$usage = '${USAGE}'; "\
+    -e 's/(<\?xml[^>]*\?>\s*)/\$1."<!-- intended-usage: ".\$usage." -->\n"/e if \\$usage ne "";' \
+    -e 'if (s/(<vector\b[^>]*?)android:width="[^"]*"/ $1 . "android:width=\"".\$w."px\"" /e) { } else { s/(<vector\b)/$1 . " android:width=\"".\$w."px\""/e }' \
+    -e 'if (s/(<vector\b[^>]*?)android:height="[^"]*"/ $1 . "android:height=\"".\$h."px\"" /e) { } else { s/(<vector\b)/$1 . " android:height=\"".\$h."px\""/e }' \
+    -e 'if (s/(<vector\b[^>]*?)android:viewportWidth="[^"]*"/ $1 . "android:viewportWidth=\"".\$w."\"" /e) { } else { s/(<vector\b)/$1 . " android:viewportWidth=\"".\$w."\""/e }' \
+    -e 'if (s/(<vector\b[^>]*?)android:viewportHeight="[^"]*"/ $1 . "android:viewportHeight=\"".\$h."\"" /e) { } else { s/(<vector\b)/$1 . " android:viewportHeight=\"".\$h."\""/e }' \
+    "$OUTPUT"
 
-    echo "Done: $OUTPUT"
-    ;;
+  echo "Annotated: $OUTPUT"
+fi
 
-  *)
-    echo "Error: unknown type '$TYPE'. Supported types: vector, banner, icon" >&2
-    usage
-    ;;
-esac
+echo "Done: $OUTPUT"
