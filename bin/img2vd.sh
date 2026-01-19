@@ -89,13 +89,39 @@ trap 'rm -rf "$TMPDIR"' EXIT
 SVG="$TMPDIR/converted.svg"
 
 echo "Converting '$INPUT' -> temporary SVG..."
+SRC_INPUT="$INPUT"
+
+# Auto-detect dark-background / light-foreground images and invert before
+# tracing so potrace traces the artwork instead of the background. Compute
+# mean brightness (0..1); if < 0.5 we assume dark overall and invert.
+MEAN=$("$IM_CMD" "$INPUT" -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || true)
+NEED_INVERT=0
+if [ -n "$MEAN" ]; then
+  if [ "$(awk -v m="$MEAN" 'BEGIN{print(m<0.5?1:0)}')" -eq 1 ]; then
+    NEED_INVERT=1
+  fi
+fi
+
+if [ "$NEED_INVERT" -eq 1 ]; then
+  PROC_INPUT="$TMPDIR/processed.png"
+  echo "Inverting colors for better tracing (detected dark image)..."
+  "$IM_CMD" "$INPUT" -channel RGB -negate "$PROC_INPUT"
+  SRC_INPUT="$PROC_INPUT"
+fi
+
 if [ -n "$BG" ]; then
   # If a background color is requested, flatten to that color.
-  "$IM_CMD" "$INPUT" -background "$BG" -flatten "$SVG"
+  "$IM_CMD" "$SRC_INPUT" -background "$BG" -flatten "$SVG"
 else
   # Preserve transparency when converting to SVG so dark backgrounds don't appear.
   # Use explicit alpha and background none to keep transparent regions.
-  "$IM_CMD" "$INPUT" -alpha set -background none "$SVG"
+  "$IM_CMD" "$SRC_INPUT" -alpha set -background none "$SVG"
+fi
+
+# If we inverted before tracing, flip common fill colors in the SVG so the
+# final artwork color matches the original (white on dark -> white fill).
+if [ "$NEED_INVERT" -eq 1 ]; then
+  perl -0777 -i -pe 's/fill="#000000"/fill="#ffffff"/gi; s/fill="#000"/fill="#ffffff"/gi' "$SVG"
 fi
 
 echo "Running svg2vectordrawable to produce Android Vector Drawable -> '$OUTPUT'..."
