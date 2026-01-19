@@ -90,9 +90,12 @@ SVG="$TMPDIR/converted.svg"
 
 echo "Converting '$INPUT' -> temporary SVG..."
 if [ -n "$BG" ]; then
+  # If a background color is requested, flatten to that color.
   "$IM_CMD" "$INPUT" -background "$BG" -flatten "$SVG"
 else
-  "$IM_CMD" "$INPUT" "$SVG"
+  # Preserve transparency when converting to SVG so dark backgrounds don't appear.
+  # Use explicit alpha and background none to keep transparent regions.
+  "$IM_CMD" "$INPUT" -alpha set -background none "$SVG"
 fi
 
 echo "Running svg2vectordrawable to produce Android Vector Drawable -> '$OUTPUT'..."
