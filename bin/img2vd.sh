@@ -113,9 +113,20 @@ if [ -n "$BG" ]; then
   # If a background color is requested, flatten to that color.
   "$IM_CMD" "$SRC_INPUT" -background "$BG" -flatten "$SVG"
 else
-  # Preserve transparency when converting to SVG so dark backgrounds don't appear.
-  # Use explicit alpha and background none to keep transparent regions.
-  "$IM_CMD" "$SRC_INPUT" -alpha set -background none "$SVG"
+  # If potrace is available, produce a clean bitmap (thresholded) and trace
+  # with potrace to get clean continuous paths instead of dotted/stippled
+  # artifacts that ImageMagick->SVG can produce for vector-like artwork.
+  if command_exists potrace; then
+    PBM="$TMPDIR/bitmap.pbm"
+    echo "Preparing bitmap for potrace (thresholding)..."
+    # remove alpha, convert to grayscale, threshold to binary, and limit size
+    "$IM_CMD" "$SRC_INPUT" -alpha off -colorspace Gray -resize 2048x2048\> -threshold 50% "$PBM"
+    echo "Tracing with potrace to produce SVG..."
+    potrace -s -o "$SVG" "$PBM"
+  else
+    # Fallback: preserve transparency when converting to SVG
+    "$IM_CMD" "$SRC_INPUT" -alpha set -background none "$SVG"
+  fi
 fi
 
 # If we inverted before tracing, flip common fill colors in the SVG so the
