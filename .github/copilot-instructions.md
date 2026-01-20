@@ -16,3 +16,14 @@
   - `svg2vectordrawable`はNode.jsのパッケージで、ローカルインストールして使用します。
 - 引数で出力するAndroid Vector Drawableの情報を指定できるようにします
   - 用途: FireTVアプリのアイコン、ランチャーアイコン、通知アイコンなど
+
+### Image To FireTV Application Icon Set
+
+- `bin/img2ftvappicons.sh`
+- FireTVアプリケーションアイコンセットを生成します。
+  - App Banner : 320x180
+  - Launcher Icon : 108x108
+- 引数に入力画像パスと出力ディレクトリパスを指定して実行します。
+  - 例: `bin/img2ftvappicons.sh input.png output_directory`
+- 画像の変換は`ImageMagick`を使用します。
+- 入力画像と出力画像のアスペクト比が異なる場合、出力画像の短辺に接するように入力画面をリサイズして、センタリングします。
